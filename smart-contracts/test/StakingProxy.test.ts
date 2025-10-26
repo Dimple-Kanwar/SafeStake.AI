@@ -1,27 +1,22 @@
+import { network } from "hardhat";
 import { expect } from "chai";
-import { ethers } from "hardhat";
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
-import { 
-  StakingProxy,
-  CollateralManager,
-  AIAgentController, 
-  MockERC20,
-  MockPyth 
-} from "../typechain-types";
+import { formatEther, parseUnits, parseEther } from "viem";
+import { beforeEach, describe, it } from "node:test";
 
-describe("StakingProxy", function () {
-  let stakingProxy: StakingProxy;
-  let collateralManager: CollateralManager;
-  let aiController: AIAgentController;
-  let mockPyth: MockPyth;
-  let stakingToken: MockERC20;
-  let owner: SignerWithAddress;
-  let treasury: SignerWithAddress;
-  let feeRecipient: SignerWithAddress;
-  let user1: SignerWithAddress;
-  let user2: SignerWithAddress;
+describe("StakingProxy", async function () {
+  let stakingProxy: { waitForDeployment: () => any; getAddress: () => any; setSupportedStakingToken: (arg0: any, arg1: boolean) => any; collateralManager: () => any; aiController: () => any; protocolTreasury: () => any; connect: (arg0: any) => { (): any; new(): any; stakeWithCollateral: { (arg0: any, arg1: bigint): any; new(): any; }; aiControlledStake: { (arg0: any, arg1: any, arg2: bigint, arg3: string): any; new(): any; }; requestUnstake: { (arg0: bigint): any; new(): any; }; executeUnstake: { (arg0: bigint): any; new(): any; }; emergencyWithdraw: { (arg0: any, arg1: bigint, arg2: any): any; new(): any; }; }; getStakingInfo: (arg0: any) => [any, any, any, any, any, any] | [any] | [any, any] | PromiseLike<[any, any, any, any, any, any]> | PromiseLike<[any]> | PromiseLike<[any, any]>; getLiquidStakingBalance: (arg0: any, arg1: any) => any; executeStakeAfterBridge: (arg0: any, arg1: any, arg2: bigint, arg3: number, arg4: any) => any; supportedStakingTokens: (arg0: any) => any; updateBaseRewardRate: (arg0: number) => any; baseAnnualRewardRate: () => any; updateProtocolFeeRate: (arg0: number) => any; protocolFeeRate: () => any; emergencyWithdraw: (arg0: any, arg1: bigint, arg2: any) => any; getProtocolStats: () => [any, any, any, any] | PromiseLike<[any, any, any, any]>; };
+  let collateralManager: { waitForDeployment: () => any; getAddress: () => any; connect: (arg0: any) => { (): any; new(): any; depositCollateral: { (arg0: any, arg1: bigint, arg2: never[], arg3: { value: bigint; }): any; new(): any; }; }; };
+  let aiController: { waitForDeployment: () => any; getAddress: () => any; authorizeAgent: (arg0: any, arg1: string) => any; };
+  let mockPyth;
+  let stakingToken: { mint: (arg0: any, arg1: bigint) => any; getAddress: () => any; connect: (arg0: any) => { (): any; new(): any; approve: { (arg0: any, arg1: bigint): any; new(): any; }; }; balanceOf: (arg0: any) => any; };
+  let owner: { address: any; };
+  let treasury: { address: any; };
+  let feeRecipient;
+  let user1: { address: any; };
+  let user2;
 
   beforeEach(async function () {
+    
     [owner, treasury, feeRecipient, user1, user2] = await ethers.getSigners();
 
     // Deploy MockPyth
@@ -53,12 +48,12 @@ describe("StakingProxy", function () {
 
     // Deploy staking token
     const MockERC20 = await ethers.getContractFactory("MockERC20");
-    stakingToken = await MockERC20.deploy("Staking Token", "STK", 18, ethers.parseEther("1000000"));
+    stakingToken = await MockERC20.deploy("Staking Token", "STK", 18, parseEther("1000000"));
 
     // Setup tokens
-    await stakingToken.mint(user1.address, ethers.parseEther("10000"));
-    await stakingToken.mint(user2.address, ethers.parseEther("10000"));
-    await stakingToken.mint(await stakingProxy.getAddress(), ethers.parseEther("100000")); // For rewards
+    await stakingToken.mint(user1.address, parseEther("10000"));
+    await stakingToken.mint(user2.address, parseEther("10000"));
+    await stakingToken.mint(await stakingProxy.getAddress(), parseEther("100000")); // For rewards
 
     // Add as supported staking token
     await stakingProxy.setSupportedStakingToken(await stakingToken.getAddress(), true);
@@ -66,13 +61,13 @@ describe("StakingProxy", function () {
     // Add collateral to users for testing
     await stakingToken.connect(user1).approve(
       await collateralManager.getAddress(), 
-      ethers.parseEther("10000")
+      parseEther("10000")
     );
     await collateralManager.connect(user1).depositCollateral(
       await stakingToken.getAddress(),
-      ethers.parseEther("2000"), // $4M collateral at $2000/ETH
+      parseEther("2000"), // $4M collateral at $2000/ETH
       [],
-      { value: ethers.parseEther("0.01") }
+      { value: parseEther("0.01") }
     );
   });
 
@@ -96,12 +91,12 @@ describe("StakingProxy", function () {
     beforeEach(async function () {
       await stakingToken.connect(user1).approve(
         await stakingProxy.getAddress(), 
-        ethers.parseEther("10000")
+        parseEther("10000")
       );
     });
 
     it("Should stake with collateral successfully", async function () {
-      const stakeAmount = ethers.parseEther("100");
+      const stakeAmount = parseEther("100");
       
       await expect(
         stakingProxy.connect(user1).stakeWithCollateral(
@@ -126,18 +121,18 @@ describe("StakingProxy", function () {
 
     it("Should revert with unsupported token", async function () {
       const unsupportedToken = await (await ethers.getContractFactory("MockERC20"))
-        .deploy("Unsupported", "UNS", 18, ethers.parseEther("1000"));
+        .deploy("Unsupported", "UNS", 18, parseEther("1000"));
 
       await expect(
         stakingProxy.connect(user1).stakeWithCollateral(
           await unsupportedToken.getAddress(),
-          ethers.parseEther("100")
+          parseEther("100")
         )
       ).to.be.revertedWithCustomError(stakingProxy, "TokenNotSupported");
     });
 
     it("Should revert with insufficient collateral", async function () {
-      const excessiveAmount = ethers.parseEther("3000"); // Would require $6M collateral
+      const excessiveAmount = parseEther("3000"); // Would require $6M collateral
       
       await expect(
         stakingProxy.connect(user1).stakeWithCollateral(
@@ -148,8 +143,8 @@ describe("StakingProxy", function () {
     });
 
     it("Should accumulate stakes for existing position", async function () {
-      const firstStake = ethers.parseEther("100");
-      const secondStake = ethers.parseEther("50");
+      const firstStake = parseEther("100");
+      const secondStake = parseEther("50");
       
       // First stake
       await stakingProxy.connect(user1).stakeWithCollateral(
@@ -170,7 +165,7 @@ describe("StakingProxy", function () {
 
   describe("Cross-Chain Staking", function () {
     it("Should execute cross-chain stake", async function () {
-      const stakeAmount = ethers.parseEther("100");
+      const stakeAmount = parseEther("100");
       const sourceChainId = 137; // Polygon
       const bridgeId = ethers.keccak256(ethers.toUtf8Bytes("bridge_123"));
       
@@ -190,7 +185,7 @@ describe("StakingProxy", function () {
     });
 
     it("Should revert cross-chain stake with insufficient collateral", async function () {
-      const excessiveAmount = ethers.parseEther("3000");
+      const excessiveAmount = parseEther("3000");
       const sourceChainId = 137;
       const bridgeId = ethers.keccak256(ethers.toUtf8Bytes("bridge_123"));
       
@@ -217,7 +212,7 @@ describe("StakingProxy", function () {
     });
 
     it("Should allow AI controlled staking", async function () {
-      const stakeAmount = ethers.parseEther("100");
+      const stakeAmount = parseEther("100");
       const agentData = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [800]); // 8% custom rate
       
       await expect(
@@ -231,7 +226,7 @@ describe("StakingProxy", function () {
     });
 
     it("Should revert when called by non-AI controller", async function () {
-      const stakeAmount = ethers.parseEther("100");
+      const stakeAmount = parseEther("100");
       const agentData = "0x";
       
       await expect(
@@ -250,17 +245,17 @@ describe("StakingProxy", function () {
       // Setup initial stake
       await stakingToken.connect(user1).approve(
         await stakingProxy.getAddress(), 
-        ethers.parseEther("10000")
+        parseEther("10000")
       );
       
       await stakingProxy.connect(user1).stakeWithCollateral(
         await stakingToken.getAddress(),
-        ethers.parseEther("1000")
+        parseEther("1000")
       );
     });
 
     it("Should request unstaking", async function () {
-      const unstakeAmount = ethers.parseEther("500");
+      const unstakeAmount = parseEther("500");
       
       await expect(
         stakingProxy.connect(user1).requestUnstake(unstakeAmount)
@@ -271,7 +266,7 @@ describe("StakingProxy", function () {
     });
 
     it("Should execute unstaking after cooldown", async function () {
-      const unstakeAmount = ethers.parseEther("500");
+      const unstakeAmount = parseEther("500");
       
       // Request unstake
       await stakingProxy.connect(user1).requestUnstake(unstakeAmount);
@@ -291,7 +286,7 @@ describe("StakingProxy", function () {
     });
 
     it("Should revert unstaking before cooldown", async function () {
-      const unstakeAmount = ethers.parseEther("500");
+      const unstakeAmount = parseEther("500");
       
       await stakingProxy.connect(user1).requestUnstake(unstakeAmount);
       
@@ -301,7 +296,7 @@ describe("StakingProxy", function () {
     });
 
     it("Should revert unstaking without request", async function () {
-      const unstakeAmount = ethers.parseEther("500");
+      const unstakeAmount = parseEther("500");
       
       await expect(
         stakingProxy.connect(user1).executeUnstake(unstakeAmount)
@@ -309,7 +304,7 @@ describe("StakingProxy", function () {
     });
 
     it("Should revert unstaking more than staked", async function () {
-      const excessiveAmount = ethers.parseEther("2000");
+      const excessiveAmount = parseEther("2000");
       
       await expect(
         stakingProxy.connect(user1).requestUnstake(excessiveAmount)
@@ -321,12 +316,12 @@ describe("StakingProxy", function () {
     beforeEach(async function () {
       await stakingToken.connect(user1).approve(
         await stakingProxy.getAddress(), 
-        ethers.parseEther("10000")
+        parseEther("10000")
       );
       
       await stakingProxy.connect(user1).stakeWithCollateral(
         await stakingToken.getAddress(),
-        ethers.parseEther("1000")
+        parseEther("1000")
       );
     });
 
@@ -339,8 +334,8 @@ describe("StakingProxy", function () {
       expect(pendingRewards).to.be.greaterThan(0);
       
       // Should be approximately 5% of staked amount (50 ETH for 1000 ETH staked)
-      const expectedRewards = ethers.parseEther("50"); // 5% of 1000 ETH
-      expect(pendingRewards).to.be.closeTo(expectedRewards, ethers.parseEther("1"));
+      const expectedRewards = parseEther("50"); // 5% of 1000 ETH
+      expect(pendingRewards).to.be.closeTo(expectedRewards, parseEther("1"));
     });
 
     it("Should distribute rewards on unstaking", async function () {
@@ -348,7 +343,7 @@ describe("StakingProxy", function () {
       await ethers.provider.send("evm_increaseTime", [30 * 24 * 3600]); // 30 days
       await ethers.provider.send("evm_mine", []);
       
-      const unstakeAmount = ethers.parseEther("1000");
+      const unstakeAmount = parseEther("1000");
       
       // Request and execute unstake
       await stakingProxy.connect(user1).requestUnstake(unstakeAmount);
@@ -371,7 +366,7 @@ describe("StakingProxy", function () {
   describe("Token Management", function () {
     it("Should add supported staking token", async function () {
       const newToken = await (await ethers.getContractFactory("MockERC20"))
-        .deploy("New Staking Token", "NST", 18, ethers.parseEther("1000"));
+        .deploy("New Staking Token", "NST", 18, parseEther("1000"));
 
       await expect(
         stakingProxy.setSupportedStakingToken(await newToken.getAddress(), true)
@@ -429,7 +424,7 @@ describe("StakingProxy", function () {
 
   describe("Emergency Functions", function () {
     it("Should allow emergency withdrawal", async function () {
-      const withdrawAmount = ethers.parseEther("100");
+      const withdrawAmount = parseEther("100");
       const initialBalance = await stakingToken.balanceOf(owner.address);
       
       await stakingProxy.emergencyWithdraw(
@@ -446,7 +441,7 @@ describe("StakingProxy", function () {
       await expect(
         stakingProxy.connect(user1).emergencyWithdraw(
           await stakingToken.getAddress(),
-          ethers.parseEther("100"),
+          parseEther("100"),
           user1.address
         )
       ).to.be.revertedWithCustomError(stakingProxy, "OwnableUnauthorizedAccount");
@@ -457,12 +452,12 @@ describe("StakingProxy", function () {
     beforeEach(async function () {
       await stakingToken.connect(user1).approve(
         await stakingProxy.getAddress(), 
-        ethers.parseEther("10000")
+        parseEther("10000")
       );
       
       await stakingProxy.connect(user1).stakeWithCollateral(
         await stakingToken.getAddress(),
-        ethers.parseEther("1000")
+        parseEther("1000")
       );
     });
 
@@ -470,8 +465,8 @@ describe("StakingProxy", function () {
       const [stakedAmount, pendingRewards, liquidBalance, collateralValue, isHealthy, canUnstake] = 
         await stakingProxy.getStakingInfo(user1.address);
       
-      expect(stakedAmount).to.equal(ethers.parseEther("1000"));
-      expect(liquidBalance).to.equal(ethers.parseEther("1000"));
+      expect(stakedAmount).to.equal(parseEther("1000"));
+      expect(liquidBalance).to.equal(parseEther("1000"));
       expect(collateralValue).to.be.greaterThan(0);
       expect(isHealthy).to.be.true;
       expect(canUnstake).to.be.false;
@@ -482,7 +477,7 @@ describe("StakingProxy", function () {
         user1.address,
         await stakingToken.getAddress()
       );
-      expect(balance).to.equal(ethers.parseEther("1000"));
+      expect(balance).to.equal(parseEther("1000"));
     });
 
     it("Should return protocol stats", async function () {

@@ -1,17 +1,38 @@
-# Sample Hardhat 3 Beta Project (`node:test` and `viem`)
+# Smart  Contracts using Hardhat 3 Beta Project (`node:test` and `viem`)
 
-This project showcases a Hardhat 3 Beta project using the native Node.js test runner (`node:test`) and the `viem` library for Ethereum interactions.
+This includes production-ready smart contracts, comprehensive testing suite, and multi-network deployment scripts using Hardhat 3.0+.
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+## Smart Contracts List
 
-## Project Overview
+The protocol implements a modular smart contract system built with Hardhat:
 
-This example project includes:
+### CollateralManager Contract
+    
+- Manages cross-chain collateral deposits and conversions with sophisticated risk management:
+- 150% minimum collateralization ratio for market volatility protection
+- 130% liquidation threshold to prevent undercollateralized positions
+- Real-time asset valuation using Pyth price feeds
+- Multi-token collateral support across different blockchains
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using [`node:test`](nodejs.org/api/test.html), the new Node.js native test runner, and [`viem`](https://viem.sh/).
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+### StakingProxy Contract
+
+- Handles staking operations on behalf of users:
+- Synthetic staking position management
+- Automated reward distribution and compounding
+- Liquid staking token issuance (ccstETH, ccstBTC, etc.)
+- Integration with major staking protocols
+
+### BridgeCoordinator Contract
+
+- Orchestrates cross-chain operations using Avail Nexus SDK:
+- Bridge and execute functionality for seamless user experience
+- Transaction batching for gas optimization
+- Multi-signature validation for enhanced security
+- Fallback mechanisms for failed bridge operations
+
+### AIAgentController contract
+
+ - Complete AI agent authorization framework with role management, rate limiting, and request handling for ASI Alliance Prize compliance
 
 ## Usage
 

@@ -1,261 +1,205 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.28;
 
-import "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
-import "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
+import "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
 
 /**
  * @title CollateralManager
- * @dev Manages multi-chain collateral with PYUSD integration and Pyth price feeds
- * Prize Compliance: PayPal USD Prize, Pyth Network Prize
- * ETHOnline 2025 - Cross-Chain AI Staking MVP
+ * @dev Multi-asset collateral management with Pyth price feeds and PYUSD support
+ * Prize Compliance: Pyth Network Prize + PayPal USD Prize
  */
 contract CollateralManager is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
-    
+
     IPyth public immutable pyth;
     
-    // PayPal USD token addresses (mainnet and testnet)
-    address public constant PYUSD_MAINNET = 0x6c3ea9036406852006290770BEdFcAbA0e23A0e8;
-    address public constant PYUSD_SEPOLIA = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238; // Testnet
+    struct TokenConfig {
+        bytes32 priceId;
+        uint8 decimals;
+        uint16 liquidationThreshold;
+        uint256 maxDeposit;
+        bool isStablecoin;
+        bool isSupported;
+    }
     
     struct CollateralPosition {
         mapping(address => uint256) tokenBalances;
-        uint256 totalValueUSD; // 8 decimal precision to match Pyth
-        uint256 lastPriceUpdate;
+        uint256 totalValueUSD;
+        uint256 lastUpdateTime;
         bool isActive;
-        uint256 depositCount; // Track number of deposits
+        uint256 depositCount;
     }
     
-    struct TokenConfig {
-        bytes32 pythPriceId;
-        uint8 decimals;
-        bool isSupported;
-        uint256 liquidationThreshold; // In basis points (e.g., 8000 = 80%)
-        uint256 maxDepositAmount; // Maximum deposit amount per transaction
-        bool isStablecoin; // Flag for stablecoin handling
-    }
-    
-    mapping(address => CollateralPosition) public positions;
     mapping(address => TokenConfig) public tokenConfigs;
+    mapping(address => CollateralPosition) private positions;
     address[] public supportedTokens;
     
-    // Risk parameters
-    uint256 public constant COLLATERAL_RATIO = 15000; // 150% (basis points)
-    uint256 public constant LIQUIDATION_THRESHOLD = 13000; // 130% (basis points)
-    uint256 public constant BASIS_POINTS = 10000;
-    uint256 public constant PRICE_PRECISION = 1e8; // Pyth uses 8 decimals
-    uint256 public constant STALE_PRICE_THRESHOLD = 3600; // 1 hour
-    
-    // Protocol fees
-    uint256 public depositFee = 10; // 0.1% in basis points
-    uint256 public withdrawalFee = 20; // 0.2% in basis points
     address public feeRecipient;
+    uint16 public depositFee = 10; // 0.1% in basis points
+    uint16 public withdrawalFee = 20; // 0.2% in basis points
+    uint16 public constant BASIS_POINTS = 10000;
+    uint16 public constant MIN_COLLATERAL_RATIO = 15000; // 150%
     
-    event CollateralDeposited(
-        address indexed user, 
-        address indexed token, 
-        uint256 amount,
-        uint256 usdValue
-    );
-    event CollateralWithdrawn(
-        address indexed user, 
-        address indexed token, 
-        uint256 amount,
-        uint256 usdValue
-    );
+    // PYUSD specific addresses
+    address public constant PYUSD_MAINNET = 0x6c3ea9036406852006290770BEdFcAbA0e23A0e8;
+    address public constant PYUSD_SEPOLIA = 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238;
+    
+    event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
+    event CollateralWithdrawn(address indexed user, address indexed token, uint256 amount);
     event PYUSDDeposited(address indexed user, uint256 amount);
-    event PricesUpdated(uint256 timestamp, uint256 feedCount);
     event TokenAdded(address indexed token, bytes32 priceId);
     event TokenRemoved(address indexed token);
-    event PositionLiquidated(address indexed user, uint256 deficit);
-    event FeesUpdated(uint256 depositFee, uint256 withdrawalFee);
+    event FeesUpdated(uint16 depositFee, uint16 withdrawalFee);
     
     error TokenNotSupported();
     error InvalidAmount();
-    error InsufficientCollateral();
-    error StalePrice();
-    error ExceedsMaxDeposit();
-    error InvalidPriceUpdate();
     error InsufficientBalance();
+    error ExceedsMaxDeposit();
     error InvalidFeeRecipient();
-    
-    constructor(address _pyth, address _feeRecipient) Ownable(msg.sender) {
-        if (_pyth == address(0) || _feeRecipient == address(0)) {
+
+    constructor(address pythAddress, address _feeRecipient) Ownable(msg.sender) {
+        if (pythAddress == address(0) || _feeRecipient == address(0)) {
             revert InvalidFeeRecipient();
         }
         
-        pyth = IPyth(_pyth);
+        pyth = IPyth(pythAddress);
         feeRecipient = _feeRecipient;
         
-        // Initialize PYUSD configuration for both mainnet and testnet
-        _addSupportedToken(
-            PYUSD_MAINNET,
-            0x41f3625971ca2ed2263e78573fe5ce23e13d2558ed3f2e47ab0f84fb9e7ae722, // PYUSD/USD price ID
-            6, // PYUSD has 6 decimals
-            9500, // 95% liquidation threshold for stablecoin
-            1000000e6, // 1M PYUSD max deposit
-            true // is stablecoin
-        );
-        
-        _addSupportedToken(
-            PYUSD_SEPOLIA,
-            0x41f3625971ca2ed2263e78573fe5ce23e13d2558ed3f2e47ab0f84fb9e7ae722, // Same price ID
-            6,
-            9500,
-            1000000e6,
-            true
-        );
+        _initializePYUSDConfig();
     }
     
-    /**
-     * @dev Deposit PYUSD as stable collateral (PayPal USD Prize requirement)
-     */
+    function _initializePYUSDConfig() private {
+        // PYUSD mainnet configuration
+        tokenConfigs[PYUSD_MAINNET] = TokenConfig({
+            priceId: 0x41f3625971ca2ed2263e78573fe5ce23e13d2558ed3f2e47ab0f84fb9e7ae722,
+            decimals: 6,
+            liquidationThreshold: 9000, // 90% for stablecoin
+            maxDeposit: 1000000 * 1e6, // 1M PYUSD
+            isStablecoin: true,
+            isSupported: true
+        });
+        supportedTokens.push(PYUSD_MAINNET);
+        
+        // PYUSD sepolia configuration
+        tokenConfigs[PYUSD_SEPOLIA] = TokenConfig({
+            priceId: 0x41f3625971ca2ed2263e78573fe5ce23e13d2558ed3f2e47ab0f84fb9e7ae722,
+            decimals: 6,
+            liquidationThreshold: 9000,
+            maxDeposit: 1000000 * 1e6,
+            isStablecoin: true,
+            isSupported: true
+        });
+        supportedTokens.push(PYUSD_SEPOLIA);
+    }
+    
     function depositPYUSD(
-        uint256 amount, 
+        uint256 amount,
         bytes[] calldata priceUpdateData
     ) external payable nonReentrant {
         if (amount == 0) revert InvalidAmount();
         
-        address pyusdToken = _getPYUSDAddress();
-        if (!tokenConfigs[pyusdToken].isSupported) revert TokenNotSupported();
+        address pyusdToken = block.chainid == 1 ? PYUSD_MAINNET : PYUSD_SEPOLIA;
         
-        // Update prices first
         _updatePrices(priceUpdateData);
         
-        // Check max deposit limit
-        if (amount > tokenConfigs[pyusdToken].maxDepositAmount) {
-            revert ExceedsMaxDeposit();
-        }
-        
-        // Calculate and collect deposit fee
         uint256 fee = (amount * depositFee) / BASIS_POINTS;
         uint256 netAmount = amount - fee;
         
-        // Transfer PYUSD tokens
         IERC20(pyusdToken).safeTransferFrom(msg.sender, address(this), amount);
         
-        // Transfer fee to recipient
         if (fee > 0) {
             IERC20(pyusdToken).safeTransfer(feeRecipient, fee);
         }
         
-        // Update position
-        positions[msg.sender].tokenBalances[pyusdToken] += netAmount;
-        positions[msg.sender].isActive = true;
-        positions[msg.sender].depositCount++;
+        CollateralPosition storage position = positions[msg.sender];
+        position.tokenBalances[pyusdToken] += netAmount;
+        position.isActive = true;
+        position.depositCount++;
+        position.lastUpdateTime = block.timestamp;
         
-        uint256 usdValue = _updatePositionValue(msg.sender);
+        _updatePositionValue(msg.sender);
         
         emit PYUSDDeposited(msg.sender, netAmount);
-        emit CollateralDeposited(msg.sender, pyusdToken, netAmount, usdValue);
     }
     
-    /**
-     * @dev Deposit any supported collateral token
-     */
     function depositCollateral(
         address token,
         uint256 amount,
         bytes[] calldata priceUpdateData
     ) external payable nonReentrant {
-        if (!tokenConfigs[token].isSupported) revert TokenNotSupported();
+        TokenConfig memory config = tokenConfigs[token];
+        if (!config.isSupported) revert TokenNotSupported();
         if (amount == 0) revert InvalidAmount();
-        if (amount > tokenConfigs[token].maxDepositAmount) {
-            revert ExceedsMaxDeposit();
-        }
         
-        // Update prices using Pyth (Pyth Network Prize requirement)
+        uint256 currentBalance = positions[msg.sender].tokenBalances[token];
+        if (currentBalance + amount > config.maxDeposit) revert ExceedsMaxDeposit();
+        
         _updatePrices(priceUpdateData);
         
-        // Calculate and collect deposit fee
         uint256 fee = (amount * depositFee) / BASIS_POINTS;
         uint256 netAmount = amount - fee;
         
-        // Transfer tokens
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         
-        // Transfer fee to recipient
         if (fee > 0) {
             IERC20(token).safeTransfer(feeRecipient, fee);
         }
         
-        // Update position
-        positions[msg.sender].tokenBalances[token] += netAmount;
-        positions[msg.sender].isActive = true;
-        positions[msg.sender].depositCount++;
+        CollateralPosition storage position = positions[msg.sender];
+        position.tokenBalances[token] += netAmount;
+        position.isActive = true;
+        position.depositCount++;
+        position.lastUpdateTime = block.timestamp;
         
-        uint256 usdValue = _updatePositionValue(msg.sender);
+        _updatePositionValue(msg.sender);
         
-        emit CollateralDeposited(msg.sender, token, netAmount, usdValue);
+        emit CollateralDeposited(msg.sender, token, netAmount);
     }
     
-    /**
-     * @dev Withdraw collateral tokens
-     */
     function withdrawCollateral(
         address token,
         uint256 amount,
         bytes[] calldata priceUpdateData
     ) external payable nonReentrant {
-        if (!tokenConfigs[token].isSupported) revert TokenNotSupported();
+        TokenConfig memory config = tokenConfigs[token];
+        if (!config.isSupported) revert TokenNotSupported();
         if (amount == 0) revert InvalidAmount();
         
         CollateralPosition storage position = positions[msg.sender];
         if (position.tokenBalances[token] < amount) revert InsufficientBalance();
         
-        // Update prices first
         _updatePrices(priceUpdateData);
         
-        // Calculate withdrawal fee
         uint256 fee = (amount * withdrawalFee) / BASIS_POINTS;
         uint256 netAmount = amount - fee;
         
-        // Update position
         position.tokenBalances[token] -= amount;
+        position.lastUpdateTime = block.timestamp;
         
-        uint256 usdValue = _updatePositionValue(msg.sender);
-        
-        // Transfer tokens to user (net of fee)
         IERC20(token).safeTransfer(msg.sender, netAmount);
         
-        // Transfer fee to recipient
         if (fee > 0) {
             IERC20(token).safeTransfer(feeRecipient, fee);
         }
         
-        emit CollateralWithdrawn(msg.sender, token, netAmount, usdValue);
+        _updatePositionValue(msg.sender);
+        
+        emit CollateralWithdrawn(msg.sender, token, netAmount);
     }
     
-    /**
-     * @dev Update prices using Pyth Network (Pull method as per prize requirement)
-     */
-    function _updatePrices(bytes[] calldata priceUpdateData) internal {
-        if (priceUpdateData.length == 0) return;
-        
-        uint256 fee = pyth.getUpdateFee(priceUpdateData);
-        if (msg.value < fee) revert InvalidPriceUpdate();
-        
-        try pyth.updatePriceFeeds{value: fee}(priceUpdateData) {
-            emit PricesUpdated(block.timestamp, priceUpdateData.length);
-        } catch {
-            revert InvalidPriceUpdate();
-        }
-        
-        // Refund excess ETH
-        if (msg.value > fee) {
-            payable(msg.sender).transfer(msg.value - fee);
+    function _updatePrices(bytes[] calldata priceUpdateData) private {
+        if (priceUpdateData.length > 0) {
+            uint256 fee = pyth.getUpdateFee(priceUpdateData);
+            pyth.updatePriceFeeds{value: fee}(priceUpdateData);
         }
     }
     
-    /**
-     * @dev Update total USD value of user's collateral position
-     */
-    function _updatePositionValue(address user) internal returns (uint256) {
+    function _updatePositionValue(address user) private {
         CollateralPosition storage position = positions[user];
         uint256 totalValue = 0;
         
@@ -265,189 +209,71 @@ contract CollateralManager is ReentrancyGuard, Ownable {
             
             if (balance > 0) {
                 TokenConfig memory config = tokenConfigs[token];
-                uint256 tokenValue;
+                PythStructs.Price memory price = pyth.getPriceUnsafe(config.priceId);
                 
-                if (config.isStablecoin) {
-                    // For stablecoins, assume 1:1 USD parity with small discount for safety
-                    tokenValue = (balance * 99 * PRICE_PRECISION) / (100 * (10 ** config.decimals));
-                } else {
-                    // Get price from Pyth for non-stablecoins
-                    PythStructs.Price memory price = pyth.getPrice(config.pythPriceId);
-                    
-                    if (price.price <= 0) revert InvalidPriceUpdate();
-                    if (block.timestamp > price.publishTime + STALE_PRICE_THRESHOLD) {
-                        revert StalePrice();
-                    }
-                    
-                    // Calculate USD value with proper decimal handling
-                    uint256 priceUint = uint256(int256(price.price));
-                    
-                    if (price.expo >= 0) {
-                        tokenValue = (balance * priceUint * (10 ** uint32(price.expo))) / 
-                                   (10 ** config.decimals);
-                    } else {
-                        tokenValue = (balance * priceUint) / 
-                                   ((10 ** config.decimals) * (10 ** uint32(-price.expo)));
-                    }
-                }
-                
-                totalValue += tokenValue;
+                uint256 valueUSD = _calculateValueUSD(balance, config.decimals, price);
+                totalValue += valueUSD;
             }
         }
         
         position.totalValueUSD = totalValue;
-        position.lastPriceUpdate = block.timestamp;
+    }
+    
+    function _calculateValueUSD(
+        uint256 amount,
+        uint8 tokenDecimals,
+        PythStructs.Price memory price
+    ) private pure returns (uint256) {
+        uint256 priceUint = uint256(uint64(price.price));
+        int32 expo = price.expo;
         
-        return totalValue;
+        uint256 normalizedAmount = amount;
+        if (tokenDecimals < 18) {
+            normalizedAmount = amount * (10 ** (18 - tokenDecimals));
+        }
+        
+        uint256 valueUSD;
+        if (expo >= 0) {
+            valueUSD = (normalizedAmount * priceUint * (10 ** uint32(expo))) / 1e18;
+        } else {
+            valueUSD = (normalizedAmount * priceUint) / (10 ** uint32(-expo)) / 1e18;
+        }
+        
+        return valueUSD;
     }
     
-    /**
-     * @dev Check if position can support additional staking
-     */
-    function canStake(address user, uint256 stakeValueUSD) external view returns (bool) {
-        uint256 collateralValue = getCollateralValue(user);
-        return (collateralValue * BASIS_POINTS) >= (stakeValueUSD * COLLATERAL_RATIO);
-    }
-    
-    /**
-     * @dev Get total collateral value in USD
-     */
-    function getCollateralValue(address user) public view returns (uint256) {
+    function getCollateralValue(address user) external view returns (uint256) {
         return positions[user].totalValueUSD;
     }
     
-    /**
-     * @dev Get token balance for user
-     */
+    function canStake(address user, uint256 stakeValueUSD) external view returns (bool) {
+        uint256 collateralValue = positions[user].totalValueUSD;
+        uint256 requiredCollateral = (stakeValueUSD * MIN_COLLATERAL_RATIO) / BASIS_POINTS;
+        return collateralValue >= requiredCollateral;
+    }
+    
+    function canLiquidate(address user, uint256 stakeValueUSD) external view returns (bool) {
+        uint256 collateralValue = positions[user].totalValueUSD;
+        uint256 liquidationThreshold = (stakeValueUSD * 13000) / BASIS_POINTS; // 130%
+        return collateralValue < liquidationThreshold;
+    }
+    
+    function getHealthRatio(
+        address user,
+        uint256 stakeValueUSD
+    ) external view returns (uint256) {
+        uint256 collateralValue = positions[user].totalValueUSD;
+        if (stakeValueUSD == 0) return type(uint256).max;
+        return (collateralValue * BASIS_POINTS) / stakeValueUSD;
+    }
+    
     function getTokenBalance(address user, address token) external view returns (uint256) {
         return positions[user].tokenBalances[token];
     }
     
-    /**
-     * @dev Check if position is eligible for liquidation
-     */
-    function canLiquidate(address user, uint256 stakeValueUSD) external view returns (bool) {
-        uint256 collateralValue = getCollateralValue(user);
-        return (collateralValue * BASIS_POINTS) < (stakeValueUSD * LIQUIDATION_THRESHOLD);
-    }
-    
-    /**
-     * @dev Get health ratio (collateral value / stake value * 100)
-     */
-    function getHealthRatio(address user, uint256 stakeValueUSD) external view returns (uint256) {
-        if (stakeValueUSD == 0) return type(uint256).max;
-        uint256 collateralValue = getCollateralValue(user);
-        return (collateralValue * BASIS_POINTS) / stakeValueUSD;
-    }
-    
-    /**
-     * @dev Add new supported token (owner only)
-     */
-    function _addSupportedToken(
-        address token,
-        bytes32 pythPriceId,
-        uint8 decimals,
-        uint256 liquidationThreshold,
-        uint256 maxDepositAmount,
-        bool isStablecoin
-    ) internal {
-        if (tokenConfigs[token].isSupported) return; // Skip if already added
-        
-        tokenConfigs[token] = TokenConfig({
-            pythPriceId: pythPriceId,
-            decimals: decimals,
-            isSupported: true,
-            liquidationThreshold: liquidationThreshold,
-            maxDepositAmount: maxDepositAmount,
-            isStablecoin: isStablecoin
-        });
-        
-        supportedTokens.push(token);
-        emit TokenAdded(token, pythPriceId);
-    }
-    
-    /**
-     * @dev Add supported token (external function)
-     */
-    function addSupportedToken(
-        address token,
-        bytes32 pythPriceId,
-        uint8 decimals,
-        uint256 liquidationThreshold,
-        uint256 maxDepositAmount,
-        bool isStablecoin
-    ) external onlyOwner {
-        _addSupportedToken(
-            token, 
-            pythPriceId, 
-            decimals, 
-            liquidationThreshold, 
-            maxDepositAmount,
-            isStablecoin
-        );
-    }
-    
-    /**
-     * @dev Remove supported token
-     */
-    function removeSupportedToken(address token) external onlyOwner {
-        if (!tokenConfigs[token].isSupported) revert TokenNotSupported();
-        
-        tokenConfigs[token].isSupported = false;
-        
-        // Remove from array
-        for (uint256 i = 0; i < supportedTokens.length; i++) {
-            if (supportedTokens[i] == token) {
-                supportedTokens[i] = supportedTokens[supportedTokens.length - 1];
-                supportedTokens.pop();
-                break;
-            }
-        }
-        
-        emit TokenRemoved(token);
-    }
-    
-    /**
-     * @dev Update fees
-     */
-    function updateFees(
-        uint256 _depositFee, 
-        uint256 _withdrawalFee
-    ) external onlyOwner {
-        require(_depositFee <= 500 && _withdrawalFee <= 500, "Fee too high"); // Max 5%
-        depositFee = _depositFee;
-        withdrawalFee = _withdrawalFee;
-        emit FeesUpdated(_depositFee, _withdrawalFee);
-    }
-    
-    /**
-     * @dev Update fee recipient
-     */
-    function updateFeeRecipient(address _feeRecipient) external onlyOwner {
-        if (_feeRecipient == address(0)) revert InvalidFeeRecipient();
-        feeRecipient = _feeRecipient;
-    }
-    
-    /**
-     * @dev Get PYUSD address based on chain
-     */
-    function _getPYUSDAddress() internal view returns (address) {
-        if (block.chainid == 1) return PYUSD_MAINNET;
-        if (block.chainid == 11155111) return PYUSD_SEPOLIA;
-        return PYUSD_SEPOLIA; // Default to testnet
-    }
-    
-    /**
-     * @dev Get supported tokens list
-     */
-    function getSupportedTokens() external view returns (address[] memory) {
-        return supportedTokens;
-    }
-    
-    /**
-     * @dev Get position summary
-     */
-    function getPositionSummary(address user) external view returns (
+    function getPositionSummary(
+        address user
+    ) external view returns (
         uint256 totalValueUSD,
         uint256 tokenCount,
         uint256 lastUpdate,
@@ -466,9 +292,60 @@ contract CollateralManager is ReentrancyGuard, Ownable {
         return (
             position.totalValueUSD,
             count,
-            position.lastPriceUpdate,
+            position.lastUpdateTime,
             position.isActive,
             position.depositCount
         );
+    }
+    
+    function addSupportedToken(
+        address token,
+        bytes32 priceId,
+        uint8 decimals,
+        uint16 liquidationThreshold,
+        uint256 maxDeposit,
+        bool isStablecoin
+    ) external onlyOwner {
+        if (token == address(0)) revert InvalidAmount();
+        
+        tokenConfigs[token] = TokenConfig({
+            priceId: priceId,
+            decimals: decimals,
+            liquidationThreshold: liquidationThreshold,
+            maxDeposit: maxDeposit,
+            isStablecoin: isStablecoin,
+            isSupported: true
+        });
+        
+        supportedTokens.push(token);
+        
+        emit TokenAdded(token, priceId);
+    }
+    
+    function removeSupportedToken(address token) external onlyOwner {
+        if (!tokenConfigs[token].isSupported) revert TokenNotSupported();
+        
+        tokenConfigs[token].isSupported = false;
+        
+        emit TokenRemoved(token);
+    }
+    
+    function getSupportedTokens() external view returns (address[] memory) {
+        return supportedTokens;
+    }
+    
+    function updateFees(uint16 _depositFee, uint16 _withdrawalFee) external onlyOwner {
+        require(_depositFee <= 500, "Fee too high"); // Max 5%
+        require(_withdrawalFee <= 500, "Fee too high");
+        
+        depositFee = _depositFee;
+        withdrawalFee = _withdrawalFee;
+        
+        emit FeesUpdated(_depositFee, _withdrawalFee);
+    }
+    
+    function updateFeeRecipient(address newRecipient) external onlyOwner {
+        if (newRecipient == address(0)) revert InvalidFeeRecipient();
+        feeRecipient = newRecipient;
     }
 }

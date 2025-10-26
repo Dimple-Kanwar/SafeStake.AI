@@ -1,18 +1,25 @@
-import { ethers } from "hardhat";
+import { network } from "hardhat";
 import { expect } from "chai";
+import { formatEther, parseUnits, parseEther } from "viem";
 
 async function main() {
   console.log("Starting deployment script for Cross-Chain AI Staking MVP...");
-  console.log("Network:", (await ethers.provider.getNetwork()).name);
-  console.log("Chain ID:", (await ethers.provider.getNetwork()).chainId);
+  const connection = await network.connect();
+  const publicClient = await connection.viem.getPublicClient();
+  console.log("Network:", connection.networkName);
+  console.log("Chain ID:", connection.id);
 
   // Get deployer
-  const [deployer] = await ethers.getSigners();
-  console.log("Deploying contracts with account:", deployer.address);
-  console.log("Account balance:", ethers.formatEther(await ethers.provider.getBalance(deployer.address)));
+  const [deployer] = await connection.viem.getWalletClients();
+  console.log({ deployer });
+  console.log("Deploying contracts with account:", deployer.account.address);
+  console.log(
+    "Account balance:",
+    formatEther(await publicClient.getBalance(deployer.account))
+  );
 
   // Network-specific configurations
-  const chainId = Number((await ethers.provider.getNetwork()).chainId);
+  const chainId = connection.id;
   let pythAddress: string;
   let deployMocks = false;
 
@@ -58,29 +65,37 @@ async function main() {
   // Deploy mocks if needed
   if (deployMocks) {
     console.log("\n📦 Deploying Mock Contracts...");
-    
-    const MockPyth = await ethers.getContractFactory("MockPyth");
-    mockPyth = await MockPyth.deploy();
-    await mockPyth.waitForDeployment();
-    pythAddress = await mockPyth.getAddress();
+
+    const mockPyth = await connection.viem.deployContract("MockPyth");
+    pythAddress = mockPyth.address;
     console.log("MockPyth deployed to:", pythAddress);
 
     // Deploy mock tokens for testing
-    const MockERC20 = await ethers.getContractFactory("MockERC20");
-    
-    const pyusd = await MockERC20.deploy("PayPal USD", "PYUSD", 6, ethers.parseUnits("1000000", 6));
-    await pyusd.waitForDeployment();
-    mockTokens.PYUSD = await pyusd.getAddress();
+    const pyusd = await connection.viem.deployContract("MockERC20", [
+      "PayPal USD",
+      "PYUSD",
+      6,
+      parseUnits("1000000", 6),
+    ]);
+    mockTokens.PYUSD = pyusd.address;
     console.log("Mock PYUSD deployed to:", mockTokens.PYUSD);
 
-    const usdc = await MockERC20.deploy("USD Coin", "USDC", 6, ethers.parseUnits("1000000", 6));
-    await usdc.waitForDeployment();
-    mockTokens.USDC = await usdc.getAddress();
+    const usdc = await connection.viem.deployContract("MockERC20", [
+      "USD Coin",
+      "USDC",
+      6,
+      parseUnits("1000000", 6),
+    ]);
+    mockTokens.USDC = usdc.address;
     console.log("Mock USDC deployed to:", mockTokens.USDC);
 
-    const weth = await MockERC20.deploy("Wrapped Ether", "WETH", 18, ethers.parseEther("100000"));
-    await weth.waitForDeployment();
-    mockTokens.WETH = await weth.getAddress();
+    const weth = await connection.viem.deployContract("MockERC20", [
+      "Wrapped Ether",
+      "WETH",
+      18,
+      parseEther("100000"),
+    ]);
+    mockTokens.WETH = weth.address;
     console.log("Mock WETH deployed to:", mockTokens.WETH);
   }
 
@@ -88,44 +103,44 @@ async function main() {
 
   // 1. Deploy AIAgentController
   console.log("\n1. Deploying AIAgentController...");
-  const AIAgentController = await ethers.getContractFactory("AIAgentController");
-  const aiController = await AIAgentController.deploy();
-  await aiController.waitForDeployment();
-  const aiControllerAddress = await aiController.getAddress();
+  const aiController = await connection.viem.deployContract(
+    "AIAgentController"
+  );
+  const aiControllerAddress = aiController.address;
   console.log("✅ AIAgentController deployed to:", aiControllerAddress);
 
   // 2. Deploy CollateralManager
   console.log("\n2. Deploying CollateralManager...");
-  const CollateralManager = await ethers.getContractFactory("CollateralManager");
-  const collateralManager = await CollateralManager.deploy(
-    pythAddress,
-    deployer.address // Fee recipient
+  const collateralManager = await connection.viem.deployContract(
+    "CollateralManager",
+    [
+      pythAddress,
+      deployer.account.address, // Fee recipient
+    ]
   );
-  await collateralManager.waitForDeployment();
-  const collateralManagerAddress = await collateralManager.getAddress();
+  const collateralManagerAddress = collateralManager.address;
   console.log("✅ CollateralManager deployed to:", collateralManagerAddress);
 
   // 3. Deploy StakingProxy
   console.log("\n3. Deploying StakingProxy...");
-  const StakingProxy = await ethers.getContractFactory("StakingProxy");
-  const stakingProxy = await StakingProxy.deploy(
+  const stakingProxy = await connection.viem.deployContract("StakingProxy", [
     collateralManagerAddress,
     aiControllerAddress,
-    deployer.address // Protocol treasury
-  );
-  await stakingProxy.waitForDeployment();
-  const stakingProxyAddress = await stakingProxy.getAddress();
+    deployer.account.address, // Protocol treasury
+  ]);
+  const stakingProxyAddress = stakingProxy.address;
   console.log("✅ StakingProxy deployed to:", stakingProxyAddress);
 
   // 4. Deploy BridgeCoordinator
   console.log("\n4. Deploying BridgeCoordinator...");
-  const BridgeCoordinator = await ethers.getContractFactory("BridgeCoordinator");
-  const bridgeCoordinator = await BridgeCoordinator.deploy(
-    stakingProxyAddress,
-    deployer.address // Fee recipient
+  const bridgeCoordinator = await connection.viem.deployContract(
+    "BridgeCoordinator",
+    [
+      stakingProxyAddress,
+      deployer.account.address, // Fee recipient
+    ]
   );
-  await bridgeCoordinator.waitForDeployment();
-  const bridgeCoordinatorAddress = await bridgeCoordinator.getAddress();
+  const bridgeCoordinatorAddress = bridgeCoordinator.address;
   console.log("✅ BridgeCoordinator deployed to:", bridgeCoordinatorAddress);
 
   console.log("\n⚙️  Setting up initial configuration...");
@@ -135,32 +150,32 @@ async function main() {
     // Add mock tokens if in development
     if (deployMocks && mockTokens.USDC) {
       console.log("Adding mock USDC as supported collateral...");
-      await collateralManager.addSupportedToken(
+      await collateralManager.write.addSupportedToken(
         mockTokens.USDC,
         "0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a", // USDC/USD price ID
         6,
         8500, // 85% liquidation threshold
-        ethers.parseUnits("100000", 6), // 100k max deposit
+        parseUnits("100000", 6), // 100k max deposit
         true // is stablecoin
       );
       console.log("✅ Mock USDC added as supported collateral");
 
       // Add as staking token
-      await stakingProxy.setSupportedStakingToken(mockTokens.USDC, true);
+      await stakingProxy.write.setSupportedStakingToken(mockTokens.USDC, true);
       console.log("✅ Mock USDC added as supported staking token");
     }
 
     if (deployMocks && mockTokens.WETH) {
       console.log("Adding mock WETH as supported token...");
-      await collateralManager.addSupportedToken(
+      await collateralManager.write.addSupportedToken(
         mockTokens.WETH,
         "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace", // ETH/USD price ID
         18,
         7500, // 75% liquidation threshold
-        ethers.parseEther("1000"), // 1000 ETH max deposit
+        parseEther("1000"), // 1000 ETH max deposit
         false // not stablecoin
       );
-      await stakingProxy.setSupportedStakingToken(mockTokens.WETH, true);
+      await stakingProxy.write.setSupportedStakingToken(mockTokens.WETH, true);
       console.log("✅ Mock WETH added as supported token");
     }
 
@@ -173,10 +188,13 @@ async function main() {
   console.log("\n🔍 Verifying deployments...");
   try {
     // Basic verification calls
-    await aiController.hasRole(await aiController.DEFAULT_ADMIN_ROLE(), deployer.address);
-    await collateralManager.owner();
-    await stakingProxy.collateralManager();
-    await bridgeCoordinator.stakingProxy();
+    await aiController.read.hasRole([
+      await aiController.read.DEFAULT_ADMIN_ROLE(),
+      deployer.account.address,
+    ]);
+    await collateralManager.read.owner();
+    await stakingProxy.read.collateralManager();
+    await bridgeCoordinator.read.stakingProxy();
     console.log("✅ All contracts verified successfully");
   } catch (error) {
     console.log("❌ Verification failed:", error);
@@ -185,17 +203,21 @@ async function main() {
   // Summary
   console.log("\n🎉 Deployment Summary");
   console.log("==========================================");
-  console.log("Network:", (await ethers.provider.getNetwork()).name);
+  console.log("Network:", connection.networkName);
   console.log("Chain ID:", chainId);
-  console.log("Deployer:", deployer.address);
-  console.log("Gas used: ~", ethers.formatEther(await ethers.provider.getBalance(deployer.address)), "ETH");
+  console.log("Deployer:", await deployer.getAddresses());
+  console.log(
+    "Gas used: ~",
+    formatEther(await publicClient.getBalance(deployer.account)),
+    "ETH"
+  );
   console.log("");
   console.log("📋 Contract Addresses:");
   console.log("├─ AIAgentController:", aiControllerAddress);
   console.log("├─ CollateralManager:", collateralManagerAddress);
   console.log("├─ StakingProxy:", stakingProxyAddress);
   console.log("└─ BridgeCoordinator:", bridgeCoordinatorAddress);
-  
+
   if (deployMocks) {
     console.log("");
     console.log("🧪 Mock Contract Addresses:");
@@ -207,19 +229,27 @@ async function main() {
 
   console.log("");
   console.log("🎯 Prize Compliance Status:");
-  console.log("✅ Hardhat 3.0+ - Contracts built and deployed with Hardhat 3.x");
+  console.log(
+    "✅ Hardhat 3.0+ - Contracts built and deployed with Hardhat 3.x"
+  );
   console.log("✅ Pyth Network - Price feeds integrated with pull method");
-  console.log("✅ PayPal USD - PYUSD support configured for both mainnet and testnet");
-  console.log("✅ ASI Alliance - AIAgentController ready for agent authorization");
-  console.log("✅ Avail Nexus - BridgeCoordinator configured for Bridge & Execute");
+  console.log(
+    "✅ PayPal USD - PYUSD support configured for both mainnet and testnet"
+  );
+  console.log(
+    "✅ ASI Alliance - AIAgentController ready for agent authorization"
+  );
+  console.log(
+    "✅ Avail Nexus - BridgeCoordinator configured for Bridge & Execute"
+  );
   console.log("✅ Blockscout - Contracts ready for explorer integration");
 
   // Save deployment addresses to file
   const deploymentInfo = {
-    network: (await ethers.provider.getNetwork()).name,
+    network: connection.networkName,
     chainId: chainId,
     timestamp: new Date().toISOString(),
-    deployer: deployer.address,
+    deployer: deployer.account.address,
     contracts: {
       AIAgentController: aiControllerAddress,
       CollateralManager: collateralManagerAddress,
@@ -228,20 +258,23 @@ async function main() {
     },
     configuration: {
       pythAddress: pythAddress,
-      feeRecipient: deployer.address,
-      protocolTreasury: deployer.address
-    }
+      feeRecipient: deployer.account.address,
+      protocolTreasury: deployer.account.address,
+    },
+    mocks: {},
   };
 
   if (deployMocks) {
     deploymentInfo.mocks = {
       MockPyth: pythAddress,
-      ...mockTokens
+      ...mockTokens,
     };
   }
 
   console.log("\n📄 Deployment completed successfully!");
-  console.log("Save the above addresses for frontend integration and prize submission.");
+  console.log(
+    "Save the above addresses for frontend integration and prize submission."
+  );
 
   return deploymentInfo;
 }

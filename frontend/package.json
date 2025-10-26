@@ -1,0 +1,39 @@
+{
+  "name": "frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@avail-project/nexus-core": "^0.0.1",
+    "@avail-project/nexus-widgets": "^0.0.5",
+    "@blockscout/app-sdk": "^0.1.2",
+    "@pythnetwork/hermes-client": "^2.0.0",
+    "@rainbow-me/rainbowkit": "^2.2.9",
+    "@settlemint/sdk-blockscout": "^2.6.2",
+    "@tanstack/react-query": "^5.90.5",
+    "connectkit": "^1.9.1",
+    "lucide-react": "^0.546.0",
+    "next": "16.0.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-hot-toast": "^2.6.0",
+    "viem": "^2.38.3",
+    "wagmi": "^2.18.2",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20.19.23",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.0.0",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "cross-chain-ai-agents",
+  "version": "1.0.0",
+  "description": "AI Agents for Cross-Chain Staking using uAgents Framework",
+  "scripts": {
+    "install-agents": "pip install uagents asyncio aiohttp python-dotenv",
+    "start-agents": "python agents/coordinator.py",
+    "test-agents": "python -m pytest agents/tests/",
+    "register-agents": "python scripts/register_agents.py"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "engines": {
+    "python": ">=3.8"
+  }
+}

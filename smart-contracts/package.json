@@ -16,18 +16,19 @@
     "node": "hardhat node",
     "clean": "hardhat clean"
   },
-  "dependencies": {
-    "@openzeppelin/contracts": "^5.0.0",
-    "@pythnetwork/pyth-sdk-solidity": "^3.0.0",
-    "dotenv": "^16.0.0"
-  },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.3",
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.0",
-    "@types/node": "^22.18.10",
+    "@nomicfoundation/hardhat-viem": "^3.0.0",
+    "@types/chai": "^5.2.3",
+    "@types/node": "^22.18.11",
     "forge-std": "github:foundry-rs/forge-std#v1.9.4",
-    "hardhat": "^3.0.7",
     "typescript": "~5.8.0",
-    "viem": "^2.38.1"
+    "viem": "^2.38.3"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0",
+    "@pythnetwork/pyth-sdk-solidity": "^4.2.0",
+    "chai": "^6.2.0"
   }
 }
