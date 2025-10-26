@@ -1,9 +1,11 @@
+'use client';
+
+import '../lib/polyfills';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAccount, } from 'wagmi';
 import { BridgeAndExecuteButton, EthereumProvider, useNexus, UserAsset } from '@avail-project/nexus-widgets';
 import { useAgentStore } from '../lib/agent-client';
 import { usePythPrices } from '../lib/pyth-client';
-import { getNexusClient } from '../lib/nexus-client';
 import { toast } from 'react-hot-toast';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -13,19 +15,16 @@ import { Badge } from './ui/badge';
 import { Loader2, TrendingUp, Shield, Zap, ExternalLink } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { cn } from '../lib/utils';
-import { getChainId } from '@wagmi/core'
-import { config } from '@/app/config';
 import { useBlockscoutNotifications, useBlockscoutPopup } from '../lib/blockscout-provider';
 
 export const AIDashboard: React.FC = () => {
-  const { address, isConnected, connector, status } = useAccount();
+  const { address, isConnected, connector, status, chain } = useAccount();
   const { setProvider, provider, isSdkInitialized, sdk, initializeSdk, deinitializeSdk } = useNexus();
   const [loading, setLoading] = useState(false)
   const [initLoading, setInitLoading] = useState(false)
   const [unifiedBalance, setUnifiedBalance] = useState<UserAsset[] | undefined>(
     undefined,
   )
-  const chain = getChainId(config)
 
   // State
   const [stakeAmount, setStakeAmount] = useState('');
@@ -44,7 +43,7 @@ export const AIDashboard: React.FC = () => {
   useEffect(() => {
     const initialize = async () => {
       if (!provider && status === 'connected') {
-        setupProvider()
+        const provider = await window.ethereum;
       }
       if (isSdkInitialized && provider && status === 'disconnected') {
         console.log('deinit')
@@ -53,9 +52,8 @@ export const AIDashboard: React.FC = () => {
       // if (isSdkInitialized) return
       setInitLoading(true)
       try {
-        await initializeSdk()
+        await initializeSdk(provider)
 
-        // sdk?.utils.getSupportedChains();
         // Connect to AI agents
         await agentStore.connect();
 
@@ -101,15 +99,15 @@ export const AIDashboard: React.FC = () => {
     }
   };
 
-  const setupProvider = async () => {
-    try {
-      const ethProvider = await connector?.getProvider()
-      if (!ethProvider) return
-      setProvider(ethProvider as EthereumProvider)
-    } catch (error) {
-      console.error('Failed to setup provider:', error)
-    }
-  }
+  // const setupProvider = async () => {
+  //   try {
+  //     const ethProvider = await connector?.getProvider()
+  //     if (!ethProvider) return
+  //     setProvider(ethProvider as EthereumProvider)
+  //   } catch (error) {
+  //     console.error('Failed to setup provider:', error)
+  //   }
+  // }
   const fetchBalance = async () => {
     setLoading(true)
     try {
@@ -210,7 +208,7 @@ export const AIDashboard: React.FC = () => {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => showTransactionHistory(chain || 1, address || '')}
+              onClick={() => showTransactionHistory(chain?.id || 1, address || '')}
             >
               <ExternalLink className="w-4 h-4" />
             </Button>

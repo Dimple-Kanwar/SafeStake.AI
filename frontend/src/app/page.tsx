@@ -15,15 +15,13 @@ export default function HomePage() {
       {/* Header */}
       <header className="flex items-center justify-between mb-12">
         <div>
+          {/* <img src="logo.png"/> */}
           <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
             Cross-Chain AI Staking
           </h1>
-          <p className="text-gray-600 mt-2">
-            ETHOnline 2025 - Powered by Avail Nexus, ASI Agents, Pyth & Blockscout
-          </p>
         </div>
-        
-        <ConnectKitButton 
+
+        <ConnectKitButton
           theme="auto"
           showBalance={true}
           showAvatar={true}
@@ -56,10 +54,10 @@ export default function HomePage() {
               Welcome to Cross-Chain AI Staking
             </h2>
             <p className="text-xl text-gray-600 mb-8">
-              Optimize your DeFi staking strategy across multiple blockchains using AI agents. 
+              Optimize your DeFi staking strategy across multiple blockchains using AI agents.
               Get started by connecting your wallet.
             </p>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
               <div className="bg-white rounded-lg shadow-lg p-6 border border-gray-100">
                 <div className="text-blue-600 text-3xl mb-4">🤖</div>
@@ -68,7 +66,7 @@ export default function HomePage() {
                   Our AI agents analyze your portfolio and optimize cross-chain staking strategies
                 </p>
               </div>
-              
+
               <div className="bg-white rounded-lg shadow-lg p-6 border border-gray-100">
                 <div className="text-green-600 text-3xl mb-4">🌉</div>
                 <h3 className="font-semibold text-lg mb-2">Cross-Chain Bridging</h3>
@@ -76,7 +74,7 @@ export default function HomePage() {
                   Seamlessly bridge assets across Ethereum, Polygon, Arbitrum, and Base
                 </p>
               </div>
-              
+
               <div className="bg-white rounded-lg shadow-lg p-6 border border-gray-100">
                 <div className="text-purple-600 text-3xl mb-4">📊</div>
                 <h3 className="font-semibold text-lg mb-2">Real-Time Data</h3>
@@ -85,8 +83,8 @@ export default function HomePage() {
                 </p>
               </div>
             </div>
-            
-            <ConnectKitButton 
+
+            <ConnectKitButton
               theme="auto"
               mode="light"
               customTheme={{
@@ -100,7 +98,7 @@ export default function HomePage() {
           </div>
         </div>
       )}
-      
+
       {/* Footer */}
       <footer className="mt-20 pt-12 border-t border-gray-200">
         <div className="text-center text-gray-500">

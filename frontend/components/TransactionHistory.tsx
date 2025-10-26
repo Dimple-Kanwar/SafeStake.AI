@@ -1,14 +1,13 @@
 import React from 'react';
-import { useTransactionHistory, useBlockscoutPopup, getBlockscoutClient } from '../lib/blockscout-client';
-import { useAccount, useNetwork } from 'wagmi';
+import { useAccount } from 'wagmi';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { ExternalLink, Clock, Hash, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { useBlockscoutPopup, useTransactionHistory } from '../lib/blockscout-provider';
 
 export const TransactionHistory: React.FC = () => {
-  const { address } = useAccount();
-  const { chain } = useNetwork();
+  const { address, chain } = useAccount();
   const { showTransactionDetails, showTransactionHistory } = useBlockscoutPopup();
   
   const { 

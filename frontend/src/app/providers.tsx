@@ -1,11 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createConfig, WagmiProvider } from 'wagmi';
 import { ConnectKitProvider } from 'connectkit';
 import { Toaster } from 'react-hot-toast';
 import { config } from './config';
+import { BlockscoutProvider } from '../../lib/blockscout-provider';
 
 // Create React Query client
 const queryClient = new QueryClient({
@@ -39,7 +40,6 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
             disclaimer: (
               <div className="text-sm text-gray-600 p-4">
                 By connecting your wallet, you agree to use our experimental cross-chain AI staking platform.
-                This is a hackathon project for ETHOnline 2025.
               </div>
             ),
           }}
